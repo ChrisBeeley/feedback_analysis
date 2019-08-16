@@ -7,10 +7,7 @@ import numpy as np
 
 # %%
 
-import os
-os.chdir("/home/chris/Nextcloud/feedback_analysis/topic_modelling/")
-
-feedback = pd.read_csv("../for_gensim.csv", encoding = "latin-1", na_values=[])
+feedback = pd.read_csv("/home/chris/Nextcloud/feedback_analysis/for_gensim.csv", encoding = "latin-1", na_values=[])
 
 # convert the 2nd column values to a list
 documents = feedback["Improve"].tolist()
