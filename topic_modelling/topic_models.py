@@ -4,6 +4,7 @@ import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.decomposition import NMF, LatentDirichletAllocation
 import numpy as np
+import inspect
 
 # %%
 
@@ -16,18 +17,11 @@ documents = feedback["Improve"].tolist()
 
 # %% write a document with the topics in
 
-# 10 topics
-
-no_topics = 10
 no_top_words = 8
 no_top_documents = 10
 
 from docx import Document
 from docx.shared import Inches
-
-document = Document()
-
-document.add_heading('Topics', 0)
 
 def display_topics(H, W, feature_names, documents, no_top_words, no_top_documents):
     for topic_idx, topic in enumerate(H):
@@ -38,6 +32,44 @@ def display_topics(H, W, feature_names, documents, no_top_words, no_top_document
         for doc_index in top_doc_indices:
             document.add_paragraph(documents[doc_index])
         document.add_page_break()
+
+# %% five topics
+
+no_topics = 5
+
+document = Document()
+
+document.add_heading('Topics', 0)
+
+# Run NMF
+nmf_model = NMF(n_components=no_topics, random_state=1, alpha=.1, l1_ratio=.5, init='nndsvd').fit(tfidf)
+nmf_W = nmf_model.transform(tfidf)
+nmf_H = nmf_model.components_
+
+display_topics(nmf_H, nmf_W, tfidf_feature_names, documents, no_top_words, no_top_documents)
+
+document.save('five_topics.docx')
+
+# %% fifteen topics
+
+no_topics = 15
+
+document = Document()
+
+# Run NMF
+nmf_model = NMF(n_components=no_topics, random_state=1, alpha=.1, l1_ratio=.5, init='nndsvd').fit(tfidf)
+nmf_W = nmf_model.transform(tfidf)
+nmf_H = nmf_model.components_
+
+display_topics(nmf_H, nmf_W, tfidf_feature_names, documents, no_top_words, no_top_documents)
+
+document.save('fifteen_topics.docx')
+
+# %% 10 topics
+
+no_topics = 10
+
+document = Document()
 
 # NMF is able to use tf-idf
 tfidf_vectorizer = TfidfVectorizer(max_df=0.95, min_df=2, stop_words='english')
@@ -53,32 +85,32 @@ display_topics(nmf_H, nmf_W, tfidf_feature_names, documents, no_top_words, no_to
 
 document.save('ten_topics.docx')
 
-# %% five topics
+# %% so I selected 10 topics. Let's dump the whole thing to R
 
-no_topics = 5
+# this bit works and produces a list of topic headings
+# and in the same order to top words from those headings
 
-document = Document()
+topic_heading  = []
+topic_words = []
 
-# Run NMF
-nmf_model = NMF(n_components=no_topics, random_state=1, alpha=.1, l1_ratio=.5, init='nndsvd').fit(tfidf)
-nmf_W = nmf_model.transform(tfidf)
-nmf_H = nmf_model.components_
+for topic_idx, topic in enumerate(nmf_H):
+    topic_heading.append("Topic %d:" % (topic_idx))
+    topic_words.append(" ".join([tfidf_feature_names[i]
+                    for i in topic.argsort()[:-no_top_words - 1:-1]]))
 
-display_topics(nmf_H, nmf_W, tfidf_feature_names, documents, no_top_words, no_top_documents)
+# topic_heading
+# topic_words
 
-document.save('five_topics.docx')
+# %% this next bit is to write which topic every document belongs to
 
-# %% five topics
+results = np.apply_along_axis(lambda x : np.argmax(x), 1, nmf_W)
 
-no_topics = 15
+feedback["topic"] = results
 
-document = Document()
+# save the topic models
 
-# Run NMF
-nmf_model = NMF(n_components=no_topics, random_state=1, alpha=.1, l1_ratio=.5, init='nndsvd').fit(tfidf)
-nmf_W = nmf_model.transform(tfidf)
-nmf_H = nmf_model.components_
+feedback.to_feather('topic_modelled.feather')
 
-display_topics(nmf_H, nmf_W, tfidf_feature_names, documents, no_top_words, no_top_documents)
+# now save what they are
 
-document.save('fifteen_topics.docx')
+pd.DataFrame(topic_words, columns = ["words"]).to_feather("topics.feather")
