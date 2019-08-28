@@ -1,16 +1,22 @@
 
+# data and package loads----
+
 # some code borrowed from here https://datascience-enthusiast.com/R/R_shiny_Tableau_treemap.html
 
 library(gridBase)
 library(feather)
 library(tidyverse)
 library(treemap)
+library(lubridate)
 
 main_data <- read_feather("topic_modelled.feather") %>% 
     select(Keep_Improve, topic)
 
 topics <- read_feather("topics.feather") %>% 
     mutate(topic_number = row_number() - 1)
+
+sentiment <- read_feather("vader.feather") %>% 
+    mutate(Date = floor_date(as.Date(Date)))
 
 # join them together
 
@@ -36,13 +42,14 @@ tmLocate <-
         
     }
 
-# Define server logic required to draw a histogram
-shinyServer(function(input, output) {
+# shiny server----
+
+function(input, output) {
+    
+    # topic treemap----
     
     output$treeMap <- renderPlot({
         
-        # par(mar=c(0,0,0,0), xaxs='i', yaxs='i') 
-        # plot(c(0,1), c(0,1),axes=F, col="white")
         vps <- baseViewports()
         
         .tm <<- treemap(frequencies,
@@ -79,17 +86,21 @@ shinyServer(function(input, output) {
         
         l <- tmLocate(list(x=x, y=y), .tm)
         z=l[, 1:(ncol(l)-5)]
-
+        
         if(is.na(z[, 1])){
             return(NULL)
         }
-
+        
         col = as.character(z[,1])
         
         return(col)
     })
     
     output$showReactive <- renderText({
+        
+        validate(
+            need(input$click_treemap_country, "Click a topic for example comments")
+        )
         
         comment_selection <- main_data %>% 
             filter(words == getRecord_population_country()) %>% 
@@ -98,4 +109,32 @@ shinyServer(function(input, output) {
         
         paste("<p>", comment_selection, "</p>")
     })
-})
+    
+    # sentiment tab----
+    
+    beeswarmGraph <- reactive({
+        
+        sentiment %>% 
+            filter(!is.na(my_compound)) %>% 
+            sample_n(100)
+    })
+    
+    output$beeswarmComments <- renderPlot({
+        
+        beeswarmGraph() %>% 
+            ggplot(aes(x = Date, y = my_compound)) + 
+            geom_point() + 
+            scale_colour_brewer(palette = "Spectral") + 
+            theme(axis.text.x=element_text(angle = 45)) 
+    })
+    
+    output$beeswarmText <- renderText({
+
+        beeswarm_df <- nearPoints(beeswarmGraph(), input$beeswarm_click, threshold = 100, maxpoints = 1)
+        
+        validate(need(nrow(beeswarm_df) > 0, "Click a point to see the comment"))
+
+        with(beeswarm_df, paste0(Keep_Improve, " (", Location, ")"))
+
+    })
+}

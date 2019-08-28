@@ -1,8 +1,6 @@
 
 # %% markdown
 
-## Notes
-
 The code in this notebook and the run_classifier.py file in this repository is provided
 for information but it will not work without being deployed properly within a working
 copy of BERT as described in
