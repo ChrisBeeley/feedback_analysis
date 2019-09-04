@@ -9,14 +9,15 @@ library(tidyverse)
 library(treemap)
 library(lubridate)
 
-main_data <- read_feather("topic_modelled.feather") %>% 
-    select(Keep_Improve, topic)
+main_data <- read_feather("vader.feather") %>% 
+    mutate(Date = floor_date(as.Date(Date))) %>% 
+    mutate(pos_neg = case_when(
+        sentiment < 0.2 ~ "neg",
+        sentiment >= 0.2 ~ "pos")) %>% 
+    select(Date, Keep_Improve, topic, sentiment, pos_neg)
 
 topics <- read_feather("topics.feather") %>% 
     mutate(topic_number = row_number() - 1)
-
-sentiment <- read_feather("vader.feather") %>% 
-    mutate(Date = floor_date(as.Date(Date)))
 
 # join them together
 
@@ -24,7 +25,7 @@ main_data <- main_data %>%
     left_join(topics, by = c("topic" = "topic_number"))
 
 frequencies <- main_data %>% 
-    group_by(words) %>% 
+    group_by(words, pos_neg) %>% 
     count()
 
 ### Handle cliks on a treemap
@@ -53,9 +54,10 @@ function(input, output) {
         vps <- baseViewports()
         
         .tm <<- treemap(frequencies,
-                        index="words",
+                        index=c("words", "pos_neg"),
                         vSize="n",
-                        type="index"
+                        type="index",
+                        align.labels = list(c("centre","centre"),c("left","top"))
         )
     })
     
