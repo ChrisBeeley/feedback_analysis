@@ -22,8 +22,10 @@ lighten <- function(color, factor = 1.4){
 main_data <- read_feather("vader.feather") %>% 
     mutate(Date = floor_date(as.Date(Date))) %>% 
     mutate(pos_neg = case_when(
-        sentiment < 0.2 ~ "neg",
-        sentiment >= 0.2 ~ "pos")) %>% 
+        sentiment < -.2 ~ "neg",
+        sentiment >= 0.3 ~ "pos",
+        TRUE ~ NA_character_)) %>% 
+    filter(!is.na(pos_neg)) %>% 
     select(Date, Keep_Improve, topic, sentiment, pos_neg)
 
 topics <- read_feather("topics.feather") %>% 
@@ -72,31 +74,32 @@ function(input, output) {
         
         p <- ggplot(frequencies,
                     aes(area = n, subgroup = words, subgroup2 = pos_neg, label = words, fill = colour)) +
-            geom_treemap() + geom_treemap_text(reflow = TRUE, place = "centre") +
+            geom_treemap(show.legend = FALSE) + geom_treemap_text(reflow = TRUE, place = "centre") +
             geom_treemap_subgroup2_text(place = "topleft", alpha = .5)
         
         
         return(p)
     }
-
+    
     output$showReactive <- renderText({
         
         validate(
             need(input$tClick, "Click a topic for example comments")
         )
-        
+
         topic_selected <- tmapCoords() %>%
             filter(xmin <= input$tClick$x) %>%
             filter(xmax >= input$tClick$x) %>%
             filter(ymin <= input$tClick$y) %>%
-            filter(ymax >= input$tClick$y) %>% 
-            pull(words)
+            filter(ymax >= input$tClick$y)
         
         comment_selection <- main_data %>%
-            filter(words == topic_selected) %>% 
+            filter(words == topic_selected$words, 
+                   pos_neg == topic_selected$pos_neg) %>% 
+            arrange(sentiment) %>% 
             sample_n(10) %>%
             pull(Keep_Improve)
-
+        
         paste("<p>", comment_selection, "</p>")
     })
     
@@ -108,4 +111,32 @@ function(input, output) {
             filter(ymin <= input$tClick$y) %>%
             filter(ymax >= input$tClick$y)
     })
+    
+    output$textView <- renderUI({
+        
+        validate(
+            need(input$tClick, "Click a topic for example comments")
+        )
+        
+        topic_selected <- tmapCoords() %>%
+            filter(xmin <= input$tClick$x) %>%
+            filter(xmax >= input$tClick$x) %>%
+            filter(ymin <= input$tClick$y) %>%
+            filter(ymax >= input$tClick$y)
+        
+        if(topic_selected$pos_neg == "pos"){
+            
+            tagList(
+                h3("Positive comments are shown sorted from least to most positive"), 
+                htmlOutput("showReactive")
+            )
+        } else {
+            
+            tagList(
+                h3("Negative comments are shown sorted from most to least negative"),
+                htmlOutput("showReactive")
+            )
+        }
+    })
 }
+
