@@ -10,7 +10,13 @@ import inspect
 
 # %%
 
-feedback = pd.read_csv("/home/chris/Nextcloud/feedback_analysis/for_gensim.csv", encoding = "latin-1", na_values=[])
+# feedback = pd.read_csv("/home/chris/Nextcloud/feedback_analysis/for_gensim.csv", encoding = "latin-1", na_values=[])
+
+feedback = pd.read_csv("/home/chris/Nextcloud/feedback_analysis/leicester.csv", encoding = "latin-1", na_values=[])
+
+feedback["word_count"] = feedback["Improve"].apply(lambda x: len(x.split()))
+
+feedback = feedback[feedback['word_count'] > 10]
 
 # convert the 2nd column values to a list
 documents = feedback["Improve"].tolist()
@@ -36,11 +42,12 @@ nmf_H = nmf_model.components_
 # this bit works and produces a list of topic headings
 # and in the same order to top words from those headings
 
-topic_heading  = []
 topic_words = []
+topic_documents = []
 
 for topic_idx, topic in enumerate(nmf_H):
-    topic_heading.append("Topic %d:" % (topic_idx))
+    top_doc_indices = np.argsort(nmf_W[:,topic_idx] )[::-1][0:no_top_documents]
+    topic_documents.append([documents[i] for i in top_doc_indices])
     topic_words.append(" ".join([tfidf_feature_names[i]
                     for i in topic.argsort()[:-no_top_words - 1:-1]]))
 
@@ -52,11 +59,15 @@ feedback["topic"] = results
 
 # save the topic models
 
+feedback = feedback.reset_index()
+
 feedback.to_feather('topic_modelled.feather')
 
 # now save what they are
 
 pd.DataFrame(topic_words, columns = ["words"]).to_feather("topics.feather")
+
+# pd.DataFrame(topic_documents, columns = ["V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10"]).to_feather("topic_documents.feather")
 
 ## and this is the sentiment bit
 
@@ -73,7 +84,7 @@ from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 analyser = SentimentIntensityAnalyzer()
 
-my_score = feedback.Keep_Improve.apply(analyser.polarity_scores)
+my_score = feedback.Improve.apply(analyser.polarity_scores)
 
 feedback["sentiment"] = my_score.apply(lambda x: x["compound"])
 

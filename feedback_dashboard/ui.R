@@ -6,8 +6,9 @@ navbarPage(title = "Unsupervised processing of patient feedback data",
            tabPanel("Topics",
                     fluidRow(
                       column(4, 
-                             uiOutput("textView")),
-                      column(7, plotOutput("treeMap", height = "600px",
+                             htmlOutput("showReactive")
+                      ),
+                      column(8, plotOutput("treeMap", height = "600px", width = "800px",
                                            click = "tClick")))
                     # fluidRow(DTOutput("showClick"))
            )

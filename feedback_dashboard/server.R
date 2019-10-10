@@ -9,6 +9,7 @@ library(lubridate)
 library(treemapify)
 library(DT)
 library(scales)
+library(RColorBrewer)
 
 # from https://gist.github.com/Jfortin1/72ef064469d1703c6b30
 
@@ -19,16 +20,32 @@ lighten <- function(color, factor = 1.4){
     col
 }
 
-main_data <- read_feather("vader.feather") %>% 
-    mutate(Date = floor_date(as.Date(Date))) %>% 
+colfunc<-colorRampPalette(c("red","green"))
+
+text_colours <- colfunc(4)
+
+main_data <- read_feather("../topic_modelled.feather") %>% 
     mutate(pos_neg = case_when(
         sentiment < -.2 ~ "neg",
         sentiment >= 0.3 ~ "pos",
         TRUE ~ NA_character_)) %>% 
     filter(!is.na(pos_neg)) %>% 
-    select(Date, Keep_Improve, topic, sentiment, pos_neg)
+    filter(Improve != "No comment", Improve != "no comment") %>% 
+    mutate(text_colour = case_when(
+        sentiment <= -.5 ~ text_colours[1],
+        sentiment < 0 ~ text_colours[2],
+        sentiment < 0.5 ~ text_colours[3],
+        TRUE ~ text_colours[4]
+    )) %>%
+    mutate(text_category = case_when(
+        sentiment <= -.5 ~ "Very negative",
+        sentiment < 0 ~ "Slightly negative",
+        sentiment < 0.5 ~ "Slightly positive",
+        TRUE ~ "Very positive"
+    )) %>%
+    select(Improve, topic, sentiment, pos_neg, text_colour, text_category)
 
-topics <- read_feather("topics.feather") %>% 
+topics <- read_feather("../topics.feather") %>% 
     mutate(topic_number = row_number() - 1)
 
 # join them together
@@ -36,17 +53,7 @@ topics <- read_feather("topics.feather") %>%
 main_data <- main_data %>% 
     left_join(topics, by = c("topic" = "topic_number"))
 
-frequencies <- main_data %>% 
-    group_by(words, pos_neg) %>% 
-    count()
-
 dark_colours <- viridis_pal()(10)
-light_colours <- sapply(dark_colours, lighten)
-
-frequencies$colour = NA
-
-frequencies$colour[as.numeric(rownames(frequencies)) %% 2 == 0] <- light_colours
-frequencies$colour[as.numeric(rownames(frequencies)) %% 2 == 1] <- dark_colours
 
 # shiny server----
 
@@ -57,7 +64,7 @@ function(input, output) {
     treemapData <- reactive({
         
         frequencies <- main_data %>% 
-            group_by(words, pos_neg) %>% 
+            group_by(words) %>% 
             count()
     })
     
@@ -67,17 +74,15 @@ function(input, output) {
     })
     
     tmapCoords <- function() {
-        treemapify(frequencies, area = "n", subgroup = "words", subgroup2 = "pos_neg")
+        treemapify(treemapData(), area = "n", subgroup = "words")
     }
     
     tmapPlot <- function() {
         
-        p <- ggplot(frequencies,
-                    aes(area = n, subgroup = words, subgroup2 = pos_neg, label = words, fill = colour)) +
-            geom_treemap(show.legend = FALSE) + geom_treemap_text(reflow = TRUE, place = "centre") +
-            geom_treemap_subgroup2_text(place = "topleft", alpha = .5)
-        
-        
+        p <- ggplot(treemapData(),
+                    aes(area = n, subgroup = words, label = words, fill = dark_colours)) +
+            geom_treemap(show.legend = FALSE) + geom_treemap_text(reflow = TRUE, place = "centre")
+
         return(p)
     }
     
@@ -86,37 +91,6 @@ function(input, output) {
         validate(
             need(input$tClick, "Click a topic for example comments")
         )
-
-        topic_selected <- tmapCoords() %>%
-            filter(xmin <= input$tClick$x) %>%
-            filter(xmax >= input$tClick$x) %>%
-            filter(ymin <= input$tClick$y) %>%
-            filter(ymax >= input$tClick$y)
-        
-        comment_selection <- main_data %>%
-            filter(words == topic_selected$words, 
-                   pos_neg == topic_selected$pos_neg) %>% 
-            arrange(sentiment) %>% 
-            sample_n(10) %>%
-            pull(Keep_Improve)
-        
-        paste("<p>", comment_selection, "</p>")
-    })
-    
-    output$showClick <- renderDT({
-        
-        tmapCoords() %>%
-            filter(xmin <= input$tClick$x) %>%
-            filter(xmax >= input$tClick$x) %>%
-            filter(ymin <= input$tClick$y) %>%
-            filter(ymax >= input$tClick$y)
-    })
-    
-    output$textView <- renderUI({
-        
-        validate(
-            need(input$tClick, "Click a topic for example comments")
-        )
         
         topic_selected <- tmapCoords() %>%
             filter(xmin <= input$tClick$x) %>%
@@ -124,19 +98,28 @@ function(input, output) {
             filter(ymin <= input$tClick$y) %>%
             filter(ymax >= input$tClick$y)
         
-        if(topic_selected$pos_neg == "pos"){
+        # filter the data so there is a mix of categories
+        
+        filter_data <- main_data %>% 
+            filter(words == topic_selected$words) %>% 
+            group_by(text_category) %>% 
+            sample_n(ifelse(n() >= 5, 5, n())) %>%
+            ungroup() %>% 
+            select(Improve, text_category)
+        
+        finalText = map(c("Very negative", "Slightly negative", "Slightly positive", "Very positive"), function(x) {
             
-            tagList(
-                h3("Positive comments are shown sorted from least to most positive"), 
-                htmlOutput("showReactive")
-            )
-        } else {
+            commentsFrame = filter_data %>% 
+                filter(text_category == x) %>% 
+                ungroup() %>% 
+                select(Improve)
             
-            tagList(
-                h3("Negative comments are shown sorted from most to least negative"),
-                htmlOutput("showReactive")
+            paste0("<h3>", x, "</h3>", 
+                   paste0("<p>", commentsFrame$Improve, "</p>", collapse = "")
             )
-        }
+        })
+        
+        return(unlist(finalText))
     })
 }
 
